@@ -43,7 +43,15 @@ The training epochs can be set on line 29.
 python3 run_exp.py --model_tag roberta --task summarize --sub_task python
 ```
 
-9. If you face an error similar to _AttributeError: module 'setuptools._distutils' has no attribute 'version'_ during training, it can be resolved by using the workaround 
+9. To run the pre-trained Roberta Model please comment and uncomment the below lines and run the below command:
+Uncomment: Lines 37, 38, 151, 152, 189, 190 (This enables us to run the nn.TransformerDecoder used in the official repo).
+Comment: Lines 41, 155, 196 (This disables our custom decoder).
+
+```
+python3 run_exp.py --model_tag roberta --task summarize --sub_task python
+```
+
+10. If you face an error similar to _AttributeError: module 'setuptools._distutils' has no attribute 'version'_ during training, it can be resolved by using the workaround 
 
 ```
 pip3 install setuptools==59.5.0
