@@ -1,7 +1,7 @@
 # Copyright (c) Microsoft Corporation. 
 # Licensed under the MIT license.
 
-from evaluator.CodeBLEU.parser import DFG_python, DFG_java, DFG_ruby, DFG_go, DFG_php, DFG_javascript, DFG_csharp
+from evaluator.CodeBLEU.parser import DFG_python
 from evaluator.CodeBLEU.parser import (remove_comments_and_docstrings,
                                        tree_to_token_index,
                                        index_to_code_token,
@@ -11,13 +11,7 @@ import os
 
 root_dir = os.path.dirname(__file__)
 dfg_function = {
-    'python': DFG_python,
-    'java': DFG_java,
-    'ruby': DFG_ruby,
-    'go': DFG_go,
-    'php': DFG_php,
-    'javascript': DFG_javascript,
-    'c_sharp': DFG_csharp,
+    'python': DFG_python
 }
 
 
