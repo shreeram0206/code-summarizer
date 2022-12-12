@@ -26,26 +26,11 @@ def build_or_load_gen_model(args):
     config_class, model_class, tokenizer_class = MODEL_CLASSES[args.model_type]
     config = config_class.from_pretrained(args.config_name if args.config_name else args.model_name_or_path)
     tokenizer = tokenizer_class.from_pretrained(args.tokenizer_name)
-    print(tokenizer)
     if args.model_type == 'roberta':
         encoder = model_class.from_pretrained(args.model_name_or_path, config=config)
 
-        # Original repo implementation Decoder:
-        # decoder_layer = nn.TransformerDecoderLayer(d_model=config.hidden_size, nhead=config.num_attention_heads)
-        # decoder = nn.TransformerDecoder(decoder_layer, num_layers=6)
-
-        ## New implementation:
-        # decoder_layer = DecoderLayer(d_model=config.hidden_size, nhead=config.num_attention_heads, ffn_hidden=2048, drop_prob=0.1)
-        # decoder = Decoder(decoder_layer, num_layers=6)
-        # decoder = nn.TransformerDecoder(decoder_layer, num_layers=6)
-
         ## Our decoder from scratch.
-        decoder = TransformerDecoder(config.vocab_size, 6, config.hidden_size, config.num_attention_heads, d_ff=2048, dropout=0.1)
-        
-        ## Decoder model repo: ours
-        # decoder = Decoder(config.vocab_size, 256, d_model=config.hidden_size, ffn_hidden=2048, n_head=config.num_attention_heads, n_layers=6, drop_prob=0.1, device='cpu')
-
-        ## dec_voc_size, max_len, d_model, n_head, n_layers, drop_prob, device
+        decoder = TransformerDecoder(6, config.hidden_size, config.num_attention_heads, d_ff=2048, dropout=0.1)
         
         model = Seq2Seq(encoder=encoder, decoder=decoder, config=config,
                         beam_size=args.beam_size, max_length=args.max_target_length,
@@ -64,19 +49,6 @@ def build_or_load_gen_model(args):
 
 # https://github.com/microsoft/CodeBERT/blob/master/CodeBERT/code2nl/model.py
 class Seq2Seq(nn.Module):
-    """
-        Build Seqence-to-Sequence.
-
-        Parameters:
-
-        * `encoder`- encoder of seq2seq model. e.g. roberta
-        * `decoder`- decoder of seq2seq model. e.g. transformer
-        * `config`- configuration of encoder model.
-        * `beam_size`- beam size for beam search.
-        * `max_length`- max length of target for beam search.
-        * `sos_id`- start of symbol ids in target for beam search.
-        * `eos_id`- end of symbol ids in target for beam search.
-    """
 
     def __init__(self, encoder, decoder, config, beam_size=None, max_length=None, sos_id=None, eos_id=None):
         super(Seq2Seq, self).__init__()
@@ -95,17 +67,12 @@ class Seq2Seq(nn.Module):
         self.eos_id = eos_id
 
     def _tie_or_clone_weights(self, first_module, second_module):
-        """ Tie or clone module weights depending of weither we are using TorchScript or not
-        """
         if self.config.torchscript:
             first_module.weight = nn.Parameter(second_module.weight.clone())
         else:
             first_module.weight = second_module.weight
 
     def tie_weights(self):
-        """ Make sure we are sharing the input and output embeddings.
-            Export to TorchScript can't handle parameter sharing so we are cloning them instead.
-        """
         self._tie_or_clone_weights(self.lm_head,
                                    self.encoder.embeddings.word_embeddings)
 
@@ -114,30 +81,11 @@ class Seq2Seq(nn.Module):
         encoder_output = outputs[0].permute([1, 0, 2]).contiguous()
 
         if target_ids is not None:
-            attn_mask = -1e4 * (1 - self.bias[:target_ids.shape[1], :target_ids.shape[1]])
+            attn_mask = -1e4 * (1 - self.bias[:target_ids.shape[0], :target_ids.shape[1]])
             tgt_embeddings = self.encoder.embeddings(target_ids).permute([1, 0, 2]).contiguous()
 
-
-            # tgt_embeddings = tgt_embeddings.long()
-            # encoder_output = encoder_output.long()
-            # attn_mask = attn_mask.long()
-
-
-            # print("type: tgt_embeddings", tgt_embeddings.dtype)
-            # print("type: encoder op", encoder_output.dtype)
-            # print("type: attn_mask", attn_mask.dtype)
-            # print("type: source_mask", source_mask.dtype)
-
-
-            # Original repo implementation Decoder:
-            # out = self.decoder(tgt_embeddings, encoder_output, tgt_mask=attn_mask,
-            #                    memory_key_padding_mask=~source_mask)
-            
-            ## Decoder from our Repo:
-            # out = self.decoder(tgt_embeddings, encoder_output, attn_mask, ~source_mask)
-
             ## Our decoder from scratch.
-            out = self.decoder(tgt_embeddings, encoder_output, source_mask)
+            out = self.decoder(tgt_embeddings, encoder_output, attn_mask, ~source_mask)
 
             # memory_key_padding_mask=(1 - source_mask).bool())
             hidden_states = torch.tanh(self.dense(out)).permute([1, 0, 2]).contiguous()
@@ -167,22 +115,11 @@ class Seq2Seq(nn.Module):
                 for _ in range(self.max_length):
                     if beam.done():
                         break
-                    attn_mask = -1e4 * (1 - self.bias[:input_ids.shape[1], :input_ids.shape[1]])
+                    attn_mask = -1e4 * (1 - self.bias[:input_ids.shape[0], :input_ids.shape[1]])
                     tgt_embeddings = self.encoder.embeddings(input_ids).permute([1, 0, 2]).contiguous()
 
-                    # Decoder from original repo:
-                    # out = self.decoder(tgt_embeddings, context, tgt_mask=attn_mask,
-                    #                    memory_key_padding_mask=~context_mask)
-
-
                     ## Our decoder from scratch.
-                    out = self.decoder(tgt_embeddings, context, context_mask)
-
-                    # tgt_embeddings = tgt_embeddings.type(torch.LongTensor)
-                    # tgt_embeddings = tgt_embeddings.cuda()
-                    
-                    ## Decoder from our Repo:
-                    # out = self.decoder(tgt_embeddings, context, attn_mask, ~context_mask)
+                    out = self.decoder(tgt_embeddings, context, attn_mask, ~context_mask)
                     
                     # memory_key_padding_mask=(1 - context_mask).bool())
                     out = torch.tanh(self.dense(out))
@@ -229,17 +166,6 @@ class Beam(object):
         return self.prevKs[-1]
 
     def advance(self, wordLk):
-        """
-        Given prob over words for every last beam `wordLk` and attention
-        `attnOut`: Compute and update the beam search.
-
-        Parameters:
-
-        * `wordLk`- probs of advancing from the last step (K x words)
-        * `attnOut`- attention at the last step
-
-        Returns: True if beam search is complete.
-        """
         numWords = wordLk.size(1)
 
         # Sum the previous scores.
@@ -313,61 +239,19 @@ class Beam(object):
             sentence.append(tokens)
         return sentence
 
-
-##########################################################
-## Our decoder model from scratch
-
-# class DecoderLayer(nn.Module):
-#     def __init__(self, d_model, nhead, ffn_hidden, drop_prob):
-#         super(DecoderLayer, self).__init__()
-#         self.self_attention = nn.MultiheadAttention(d_model, nhead)
-#         self.norm1 = LayerNorm(d_model=d_model)
-#         self.dropout1 = nn.Dropout(p=drop_prob)
-
-#         self.enc_dec_attention = nn.MultiheadAttention(d_model, nhead)
-#         self.norm2 = LayerNorm(d_model=d_model)
-#         self.dropout2 = nn.Dropout(p=drop_prob)
-
-#         self.ffn = PositionwiseFeedForward(d_model=d_model, ffn_hidden=ffn_hidden, drop_prob=drop_prob)
-#         self.norm3 = LayerNorm(d_model=d_model)
-#         self.dropout3 = nn.Dropout(p=drop_prob)
-
-#     def forward(self, tgt, memory, tgt_mask, memory_key_padding_mask):
-#         _x = tgt
-#         x = self.self_attention(tgt, tgt, tgt, tgt_mask)
-#         x = self.dropout1(x)
-#         x = self.norm1(x + _x)
-
-#         _x = x
-#         x = self.enc_dec_attention(x, memory, memory, tgt_mask)
-#         x = self.dropout2(x)
-#         x = self.norm2(x + _x)
-
-#         _x = x
-#         x = self.ffn(x)
-#         x = self.dropout3(x)
-
-#         return x
             
 class TransformerDecoder(nn.Module):
-    def __init__(self, vocab_size, num_layers, d_model, num_heads, d_ff, dropout):
+    def __init__(self, num_layers, d_model, num_heads, d_ff, dropout):
         super().__init__()
 
         self.num_layers = num_layers
         self.d_model = d_model
 
-        # create the positional encodings
-        # self.positional_encodings = nn.Embedding(240, d_model)
-
         # create the multi-headed attention layer
-        # self.multi_headed_attention = nn.MultiheadAttention(d_model, num_heads)
+        self.multi_headed_attention = nn.MultiheadAttention(d_model, num_heads)
+        self.norm1 = LayerNorm(d_model = d_model)
 
-        # create the feedforward layer
-        self.feedforward = nn.Sequential(
-            nn.Linear(d_model, d_ff),
-            nn.ReLU(),
-            nn.Linear(d_ff, d_model)
-        )
+        self.feedforward = PositionwiseFeedForward(d_ff, d_model, dropout)
 
         # create the final linear layer
         self.output_linear = nn.Linear(d_model, d_model)
@@ -375,56 +259,65 @@ class TransformerDecoder(nn.Module):
         # create the dropout layer
         self.dropout = nn.Dropout(dropout)
 
-    def forward(self, input, encoder_output, mask):
-        # add the positional encodings to the input
-        # x = input + self.positional_encodings(input)
-        x = input
+    def forward(self, input, encoder_output, attn_mask, src_mask):
+        _x = input
 
         # pass the input through the N decoder layers
         for i in range(self.num_layers):
-            x = self.dropout(x)
+            
 
             # compute the multi-headed attention
-            # x, attn = self.multi_headed_attention(x, x, x, mask)
+            x, attn = self.multi_headed_attention(_x, _x, _x, attn_mask)
+            x = self.dropout(x)
+            x = self.norm1(x + _x)
+
+            _x = x
+            x, attn = self.multi_headed_attention(x, encoder_output, encoder_output, src_mask)
+
+            x = self.dropout(x)
+            x = self.norm1(x + _x)
+
+            _x = x
 
             # pass the result through the feedforward layer
             x = self.feedforward(x)
+            x = self.dropout(x)
+            x = self.norm1(x + _x)
 
         # apply the final linear layer and return the result
         return self.output_linear(x)
 
 
-# class PositionwiseFeedForward(nn.Module):
+class PositionwiseFeedForward(nn.Module):
 
-#     def __init__(self, ffn_hidden, d_model, drop_prob=0.1):
-#         super(PositionwiseFeedForward, self).__init__()
-#         self.linear1 = nn.Linear(d_model, ffn_hidden)
-#         self.linear2 = nn.Linear(ffn_hidden, d_model)
-#         self.relu = nn.ReLU()
-#         self.dropout = nn.Dropout(p=drop_prob)
+    def __init__(self, ffn_hidden, d_model, drop_prob=0.1):
+        super(PositionwiseFeedForward, self).__init__()
+        self.linear1 = nn.Linear(d_model, ffn_hidden)
+        self.linear2 = nn.Linear(ffn_hidden, d_model)
+        self.relu = nn.ReLU()
+        self.dropout = nn.Dropout(p=drop_prob)
 
-#     def forward(self, x):
-#         x = self.linear1(x)
-#         x = self.relu(x)
-#         x = self.dropout(x)
-#         x = self.linear2(x)
-#         return x
+    def forward(self, x):
+        x = self.linear1(x)
+        x = self.relu(x)
+        x = self.dropout(x)
+        x = self.linear2(x)
+        return x
 
 
-# class LayerNorm(nn.Module):
-#     def __init__(self, d_model, eps=1e-12):
-#         super(LayerNorm, self).__init__()
-#         self.gamma = nn.Parameter(torch.ones(d_model))
-#         self.beta = nn.Parameter(torch.zeros(d_model))
-#         self.eps = eps
+class LayerNorm(nn.Module):
+    def __init__(self, d_model, eps=1e-12):
+        super(LayerNorm, self).__init__()
+        self.gamma = nn.Parameter(torch.ones(d_model))
+        self.beta = nn.Parameter(torch.zeros(d_model))
+        self.eps = eps
 
-#     def forward(self, x):
-#         mean = x.mean(-1, keepdim=True)
-#         std = x.std(-1, keepdim=True)
-#         # '-1' means last dimension. 
+    def forward(self, x):
+        mean = x.mean(-1, keepdim=True)
+        std = x.std(-1, keepdim=True)
 
-#         out = (x - mean) / (std + self.eps)
-#         out = self.gamma * out + self.beta
-#         return out
+        out = (x - mean) / (std + self.eps)
+        out = self.gamma * out + self.beta
+        return out
 
 
