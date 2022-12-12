@@ -55,3 +55,14 @@ python3 run_exp.py --model_tag roberta --task summarize --sub_task python
 ```
 pip3 install setuptools==59.5.0
 ```
+
+# MLOps:
+
+We have deployed one of our pre-trained models (CodeT5) on a web application which is running using Flask. A user can enter a code snippet in a text area on the web page and get a short description of the functionality of the code.
+
+To run the web application:
+
+```
+cd mlops/flask
+python3 web_app.py
+```
