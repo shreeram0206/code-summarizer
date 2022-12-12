@@ -1,82 +1,103 @@
-#!/usr/bin/env python
+from torch.utils.data import TensorDataset
+import numpy as np
+import logging
 import os
-import argparse
+import random
+import torch
+import time
+from tqdm import tqdm
+from _utils import *
+
+logger = logging.getLogger(__name__)
 
 
-def get_cmd(task, sub_task, model_tag, gpu, data_num, bs, lr, source_length, target_length, patience, epoch, warmup,
-            model_dir, summary_dir, res_fn, max_steps=None, save_steps=None, log_steps=None):
-    if max_steps is None:
-        cmd_str = 'bash exp_with_args.sh %s %s %s %d %d %d %d %d %d %d %d %d %s %s %s' % \
-                  (task, sub_task, model_tag, gpu, data_num, bs, lr, source_length, target_length, patience, epoch,
-                   warmup, model_dir, summary_dir, res_fn)
+def load_and_cache_gen_data(args, filename, pool, tokenizer, split_tag, only_src=False, is_sample=False):
+    data_tag = '_all' if args.data_num == -1 else '_%d' % args.data_num
+    cache_fn = '{}/{}.pt'.format(args.cache_path, split_tag + ('_src' if only_src else '') + data_tag)
+
+    examples = read_examples(filename, args.data_num, args.task)
+
+    if is_sample:
+        examples = random.sample(examples, min(5000, len(examples)))
+    if split_tag == 'train':
+        calc_stats(examples, tokenizer, is_tokenize=True)
     else:
-        cmd_str = 'bash exp_with_args.sh %s %s %s %d %d %d %d %d %d %d %d %d %s %s %s %d %d %d' % \
-                  (task, sub_task, model_tag, gpu, data_num, bs, lr, source_length, target_length, patience, epoch,
-                   warmup, model_dir, summary_dir, res_fn, max_steps, save_steps, log_steps)
-    return cmd_str
-
-
-def get_args_by_task_model(task, sub_task, model_tag):
-    if task == 'summarize':
-        # ruby: Read 24927 examples, avg src len: 66, avg trg len: 12, max src len: 501, max trg len: 146
-        # [TOKENIZE] avg src len: 100, avg trg len: 13, max src len: 1250, max trg len: 161
-        # Python: Read 251820 examples, avg src len: 100, avg trg len: 11, max src len: 512, max trg len: 222
-        # [TOKENIZE] avg src len: 142, avg trg len: 12, max src len: 2016, max trg len: 245
-        # Javascript: Read 58025 examples, avg src len: 114, avg trg len: 11, max src len: 512, max trg len: 165
-        # [TOKENIZE] avg src len: 136, avg trg len: 12, max src len: 3016, max trg len: 177
-        src_len = 256
-        trg_len = 128
-        epoch = 15
-        patience = 2
-
-    if 'codet5_small' in model_tag:
-        bs = 32
-        if task == 'summarize' or task == 'translate' or (task == 'refine' and sub_task == 'small'):
-            bs = 48
-    elif 'codet5_large' in model_tag:
-        bs = 8
+        calc_stats(examples)
+    if os.path.exists(cache_fn) and not is_sample:
+        logger.info("Load cache data from %s", cache_fn)
+        data = torch.load(cache_fn)
     else:
-        bs = 32
-        if task == 'summarize':
-            bs = 48
-    lr = 5
-    return bs, lr, src_len, trg_len, patience, epoch
+        if is_sample:
+            logger.info("Sample 5k data for computing bleu from %s", filename)
+        else:
+            logger.info("Create cache data into %s", cache_fn)
+        tuple_examples = [(example, idx, tokenizer, args, split_tag) for idx, example in enumerate(examples)]
+        features = pool.map(convert_examples_to_features, tqdm(tuple_examples, total=len(tuple_examples)))
+        all_source_ids = torch.tensor([f.source_ids for f in features], dtype=torch.long)
+        if split_tag == 'test' or only_src:
+            data = TensorDataset(all_source_ids)
+        else:
+            all_target_ids = torch.tensor([f.target_ids for f in features], dtype=torch.long)
+            data = TensorDataset(all_source_ids, all_target_ids)
+        if args.local_rank in [-1, 0] and not is_sample:
+            torch.save(data, cache_fn)
+    return examples, data
 
 
-def run_one_exp(args):
-    bs, lr, src_len, trg_len, patience, epoch = get_args_by_task_model(args.task, args.sub_task, args.model_tag)
-    print('============================Start Running==========================')
-    cmd_str = get_cmd(task=args.task, sub_task=args.sub_task, model_tag=args.model_tag, gpu=args.gpu,
-                      data_num=args.data_num, bs=bs, lr=lr, source_length=src_len, target_length=trg_len,
-                      patience=patience, epoch=epoch, warmup=1000,
-                      model_dir=args.model_dir, summary_dir=args.summary_dir,
-                      res_fn='{}/{}_{}.txt'.format(args.res_dir, args.task, args.model_tag))
-    print('%s\n' % cmd_str)
-    os.system(cmd_str)
-
-
-def get_sub_tasks(task):
+def get_filenames(data_root, task, sub_task, split=''):
     if task == 'summarize':
-        sub_tasks = ['python']
-    return sub_tasks
+        data_dir = '{}/{}/{}'.format(data_root, task, sub_task)
+        train_fn = '{}/train.jsonl'.format(data_dir)
+        dev_fn = '{}/valid.jsonl'.format(data_dir)
+        test_fn = '{}/test.jsonl'.format(data_dir)
+    if split == 'train':
+        return train_fn
+    elif split == 'dev':
+        return dev_fn
+    elif split == 'test':
+        return test_fn
+    else:
+        return train_fn, dev_fn, test_fn
 
 
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--model_tag", type=str, default='codet5_base',
-                        choices=['roberta', 'codebert', 'bart_base', 'codet5_small', 'codet5_base', 'codet5_large'])
-    parser.add_argument("--task", type=str, default='summarize', choices=['summarize'])
-    parser.add_argument("--sub_task", type=str, default='ruby')
-    parser.add_argument("--res_dir", type=str, default='results', help='directory to save fine-tuning results')
-    parser.add_argument("--model_dir", type=str, default='saved_models', help='directory to save fine-tuned models')
-    parser.add_argument("--summary_dir", type=str, default='tensorboard', help='directory to save tensorboard summary')
-    parser.add_argument("--data_num", type=int, default=-1, help='number of data instances to use, -1 for full data')
-    parser.add_argument("--gpu", type=int, default=0, help='index of the gpu to use in a cluster')
-    args = parser.parse_args()
+def read_examples(filename, data_num, task):
+    read_example_dict = {
+        'summarize': read_summarize_examples
+    }
+    return read_example_dict[task](filename, data_num)
 
-    if not os.path.exists(args.res_dir):
-        os.makedirs(args.res_dir)
 
-    assert args.sub_task in get_sub_tasks(args.task)
-    if args.task == 'summarize':
-        run_one_exp(args)
+def calc_stats(examples, tokenizer=None, is_tokenize=False):
+    avg_src_len = []
+    avg_trg_len = []
+    avg_src_len_tokenize = []
+    avg_trg_len_tokenize = []
+    for ex in examples:
+        if is_tokenize:
+            avg_src_len.append(len(ex.source.split()))
+            avg_trg_len.append(len(str(ex.target).split()))
+            avg_src_len_tokenize.append(len(tokenizer.tokenize(ex.source)))
+            avg_trg_len_tokenize.append(len(tokenizer.tokenize(str(ex.target))))
+        else:
+            avg_src_len.append(len(ex.source.split()))
+            avg_trg_len.append(len(str(ex.target).split()))
+    if is_tokenize:
+        logger.info("Read %d examples, avg src len: %d, avg trg len: %d, max src len: %d, max trg len: %d",
+                    len(examples), np.mean(avg_src_len), np.mean(avg_trg_len), max(avg_src_len), max(avg_trg_len))
+        logger.info("[TOKENIZE] avg src len: %d, avg trg len: %d, max src len: %d, max trg len: %d",
+                    np.mean(avg_src_len_tokenize), np.mean(avg_trg_len_tokenize), max(avg_src_len_tokenize),
+                    max(avg_trg_len_tokenize))
+    else:
+        logger.info("Read %d examples, avg src len: %d, avg trg len: %d, max src len: %d, max trg len: %d",
+                    len(examples), np.mean(avg_src_len), np.mean(avg_trg_len), max(avg_src_len), max(avg_trg_len))
+
+
+def get_elapse_time(t0):
+    elapse_time = time.time() - t0
+    if elapse_time > 3600:
+        hour = int(elapse_time // 3600)
+        minute = int((elapse_time % 3600) // 60)
+        return "{}h{}m".format(hour, minute)
+    else:
+        minute = int((elapse_time % 3600) // 60)
+        return "{}m".format(minute)
