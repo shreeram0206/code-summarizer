@@ -48,7 +48,6 @@ def convert_examples_to_features(item):
 
 
 class InputFeatures(object):
-    """A single training/test features for a example."""
 
     def __init__(self,
                  example_id,
@@ -63,7 +62,6 @@ class InputFeatures(object):
 
 
 class Example(object):
-    """A single training/test example."""
 
     def __init__(self,
                  idx,
@@ -82,7 +80,6 @@ class Example(object):
 
 
 def read_summarize_examples(filename, data_num):
-    """Read examples from filename."""
     examples = []
     with open(filename, encoding="utf-8") as f:
         for idx, line in enumerate(f):
