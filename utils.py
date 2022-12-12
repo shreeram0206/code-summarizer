@@ -12,9 +12,6 @@ logger = logging.getLogger(__name__)
 
 
 def load_and_cache_gen_data(args, filename, pool, tokenizer, split_tag, only_src=False, is_sample=False):
-    # cache the data into args.cache_path except it is sampled
-    # only_src: control whether to return only source ids for bleu evaluating (dev/test)
-    # return: examples (Example object), data (TensorDataset)
     data_tag = '_all' if args.data_num == -1 else '_%d' % args.data_num
     cache_fn = '{}/{}.pt'.format(args.cache_path, split_tag + ('_src' if only_src else '') + data_tag)
 
