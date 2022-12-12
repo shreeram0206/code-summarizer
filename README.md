@@ -29,11 +29,10 @@ gsutil -m cp -r "gs://sfr-codet5-data-research/finetuned_models" .
 
 4. Change the working directory inside /sh/exp_with_args.sh (WORKDIR) to the path of your repository.
  
-5. Batch sizes and number of epochs can be modified inside run_exp.py. The batch_size is set as 48 and can be changed on line 41 inside run_exp.py.
-The training epochs can be set on line 29.
+5. Batch sizes and number of epochs can be modified inside run_exp.py. The batch_size is set as 48 and can be changed inside run_exp.py. The training epochs can be set in the same file.
 
 
-6. Set the python version according to the version on your machine (line 86 of the same file).
+6. Set the python version according to the version on your machine.
 
 7. To build on the Seq2Seq model, we use the model tag 'roberta' to get the exact errors printed on the terminal. 
 
