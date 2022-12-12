@@ -78,7 +78,7 @@ Size: 202.240 MB
 Roberta Pretrained:
 
 Model File: pytorch_model_roberta.bin
-Size: 650.513 MB
+Size: 674 MB
 
 ## References
 ```
