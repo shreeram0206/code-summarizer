@@ -66,3 +66,14 @@ To run the web application:
 cd mlops/flask
 python3 web_app.py
 ```
+
+## References
+```
+@inproceedings{
+    wang2021codet5,
+    title={CodeT5: Identifier-aware Unified Pre-trained Encoder-Decoder Models for Code Understanding and Generation}, 
+    author={Yue Wang, Weishi Wang, Shafiq Joty, Steven C.H. Hoi},
+    booktitle={Proceedings of the 2021 Conference on Empirical Methods in Natural Language Processing, EMNLP 2021},
+    year={2021},
+}
+```
