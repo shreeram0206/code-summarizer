@@ -1,0 +1,57 @@
+
+<!DOCTYPE html>
+<html>
+ 
+<!DOCTYPE html>
+<html>
+<body>
+
+<h1>Welcome to the code summarizer application</h1>
+
+<div>
+  <p><label for="code_input">Please enter your code here:</label></p>
+  <textarea id="code_input" name="code_input" rows="25" cols="100"></textarea>
+  <br>
+  <button id="code_submit" type="submit" onclick="code_submit()">Submit</button>
+</div>
+
+<p>Click the "Submit" to get a description of the functionality of your code</p>
+
+<h1 id="text1"></h1>
+
+</body>
+
+<script>
+    let url = "http://127.0.0.1:5000/code";
+    async function postRequest(url, code) {
+        let data = {"code" : code};
+        let res = await fetch(url, {
+                method: 'POST',
+                headers: {
+                        'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(data),
+        });
+        if (res.ok) {
+            let ret = await res.json();
+            return ret.response;
+
+        } else {
+            return `HTTP error: ${res.status}`;
+        }
+    }
+
+    function code_submit(){
+        code = document.getElementById("code_input").value;
+        postRequest(url, code).then(data => {
+            console.log(data);
+            data = "Description of your code: " + data;
+            document.getElementById('text1').innerHTML = data
+        })
+
+    }
+
+</script>
+
+
+</html>
