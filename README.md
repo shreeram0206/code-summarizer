@@ -42,10 +42,6 @@ gsutil -m cp -r "gs://sfr-codet5-data-research/finetuned_models" .
 python3 run_exp.py --model_tag roberta --task summarize --sub_task python
 ```
 
-9. To run the pre-trained Roberta Model please comment and uncomment the below lines and run the below command:
-Uncomment: Lines 37, 38, 151, 152, 189, 190 (This enables us to run the nn.TransformerDecoder used in the official repo).
-Comment: Lines 41, 155, 196 (This disables our custom decoder).
-
 ```
 python3 run_exp.py --model_tag roberta --task summarize --sub_task python
 ```
