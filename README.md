@@ -63,6 +63,23 @@ cd mlops/flask
 python3 web_app.py
 ```
 
+# Model Files:
+Custom Model: 
+
+Model file: pytorch_model_custom_model.bin
+Size: 529.518 MB
+
+
+CodeT5 pretrained:
+
+Model File: pytorch_model_codet5.bin
+Size: 202.240 MB
+
+Roberta Pretrained:
+
+Model File: pytorch_model_roberta.bin
+Size: 650.513 MB
+
 ## References
 ```
 @inproceedings{
